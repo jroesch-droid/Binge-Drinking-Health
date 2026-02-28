@@ -1,0 +1,140 @@
+---
+title: "Binge Drinking"
+output: html_document
+---
+
+
+
+
+
+
+```{r, include=TRUE}
+#I used a lot of libraries, so there might need to be some that are needed to be downloaded in order for all my code to run without error.
+library(tidyverse)
+library(GGally)
+library(gtsummary)
+library(dplyr)
+library(janitor)
+library(gt)
+library(forcats)
+library(car)
+library(ggeffects)
+library(knitr)
+library(gridExtra)
+```
+
+```{r, include=TRUE}
+#This is the large csv file with all of the data, all of the rows and columns. This is the new and refreshed csv.
+data <- read_csv("brsff 2022 analysis.csv")
+```
+
+
+
+```{r, include=TRUE}
+#This takes out the other possible outcome variables that I was debating on using, leaving me with the outcome variable of binge drinking.
+newData <- data %>% select(-one_of('AVEDRNK3', 'MAXDRNKS'))
+```
+
+
+
+
+```{r, include=TRUE}
+#This makes the binge drinking variable, DRNK3GE5, into a Bernoulli variable of 0 and 1 where 0 represents people in the past 30 days that did not partake in binge drinking, see code book for description of binge drinking. Whereas 1 represents the people that binge drank at least once in the past 30 days.
+newBernData <- newData
+newBernData$DRNK3GE5 <- ifelse(data$DRNK3GE5 > 0, 1, 0)
+newBernData
+```
+
+
+
+```{r, include=TRUE}
+#This fits a logistic regression model with the new Bernoulli outcome variable with all the other predictor variables that I might have in my model.
+logOddFit <- glm(DRNK3GE5 ~ PHYSHLTH + MENTHLTH + SEXVAR + INCOME3 + CHILDREN + EMTSUPRT + LSATISFY + GENHLTH + SLEPTIM1, family = "binomial", data = newBernData)
+logOddFit
+summary(logOddFit)
+```
+
+
+
+
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+#TABLE 1
+#This is going to be table 1, it is the weighted and unweighted counts of all the predictor variables stratified by binge drinking.
+Table1 <- newBernData %>%
+  mutate(DRNK3GE5 = recode_factor(DRNK3GE5, "0" = "None", "1" = "At Least Once"),
+         PHYSHLTH = cut(PHYSHLTH, breaks = c(-Inf, 10, 20, 31), labels = c("0-10", "11-20", "21-30")),
+         MENTHLTH = cut(MENTHLTH, breaks = c(-Inf, 10, 20, 31), labels = c("0-10", "11-20", "21-30")),
+         CHILDREN = cut(CHILDREN, breaks = c(-Inf, 0, 1, 2, 3, 4, 81), labels = c("0", "1", "2", "3", "4", ">4")),
+         INCOME3 = cut(INCOME3, breaks = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11), labels = c("<$10K", "$10K to <$15K", "$15K to <$20K", "$20K to <$25K", "$25K to <$35K", "$35K to <$50K", "$50K to <$75K", "$75K to <$100K", "$100K to <$150K", "$150K to <$200K", "$200K or more")),
+         SLEPTIM1 = cut(SLEPTIM1, breaks = c(-Inf, 8, 16, 24), labels = c("1-8", "9-16", "17-24")),
+         GENHLTH = cut(GENHLTH, breaks = c(0, 1, 2, 3, 4, 5), labels = c("Excellent", "Very Good", "Good", "Fair", "Poor")),
+         LSATISFY = cut(LSATISFY, breaks = c(0, 1, 2, 3, 4), labels = c("Very Satisfied", "Satisfied", "Dissatisfied", "Very Dissatisfied")),
+         EMTSUPRT = cut(EMTSUPRT, breaks = c(0, 1, 2, 3, 4, 5), labels = c("Always", "Usually", "Sometimes", "Rarely", "Never")),
+         SEXVAR = cut(SEXVAR, breaks = c(-Inf, 0, 1), labels = c("Female", "Male"))) %>%
+  tbl_summary(by = DRNK3GE5, label = list(GENHLTH ~ "General health", PHYSHLTH ~ "Poor physical health (days)", MENTHLTH ~ "Poor mental health (days)", SLEPTIM1 ~ "Amount of sleep (hours)", CHILDREN ~ "Children in household", LSATISFY ~ "General life satisfaction", EMTSUPRT ~ "Frequency of emotional support", INCOME3 ~ "Income level", SEXVAR ~ "Sex")) %>%   add_overall() %>%  modify_spanning_header(c("stat_1", "stat_2") ~ "**Binge Drinking**") %>% modify_header(label = "**Predictor**")
+Table1
+```
+
+
+
+
+
+
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+#gives a table of the coefficients in OR with CI and a p value, this one contains all of the predictors. Can say this is model 1.
+model1VariablesOR <- logOddFit %>% tbl_regression(exponentiate = TRUE, label = list(GENHLTH ~ "General health", PHYSHLTH ~ "Poor physical health (days)", MENTHLTH ~ "Poor mental health (days)", SLEPTIM1 ~ "Amount of sleep (hours)", CHILDREN ~ "Children in household", LSATISFY ~ "General life satisfaction", EMTSUPRT ~ "Frequency of emotional support", INCOME3 ~ "Income level", SEXVAR ~ "Sex*"),estimate_fun = purrr::partial(style_ratio, digits = 3)) %>% modify_header(label = "**Predictor**") %>% as_gt() %>% gt::tab_source_note(gt::md("*Sex refernce group: Female."))
+model1VariablesOR
+```
+
+
+
+
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+#This creates the predicted probability of binge drinking on mental health.
+plot1 <- ggpredict(logOddFit, terms = "MENTHLTH") %>% plot() + labs(title = "", x = "Mental Health", y = "Probability")
+```
+
+
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+#This creates the predicted probability of binge drinking on physical health.
+plot2 <- ggpredict(logOddFit, terms = "PHYSHLTH") %>% plot() + labs(title = "", x = "Physical Health", y = "Probability")
+```
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+#This creates a grid so that they can be right next to each other in the paper.
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+
+
+
+```{r, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
+#This creates the predicted probability of binge drinking on mental health.
+plot1 <- ggpredict(logOddFit, terms = "MENTHLTH") %>% plot() + labs(title = "", x = "Mental Health", y = "Probability")
+```
+
+
+
+```{r, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
+#This creates the predicted probability of binge drinking on physical health.
+plot2 <- ggpredict(logOddFit, terms = "PHYSHLTH") %>% plot() + labs(title = "", x = "Physical Health", y = "Probability")
+```
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE, fig.height=3}
+#This creates a grid so that they can be right next to each other in the paper.
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+
+
+
+
+
+
+
+
+
